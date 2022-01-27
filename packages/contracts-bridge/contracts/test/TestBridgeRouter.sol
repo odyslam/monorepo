@@ -4,6 +4,8 @@ pragma solidity >=0.6.11;
 import "../BridgeRouter.sol";
 
 contract TestBridgeRouter is BridgeRouter {
+    constructor() BridgeRouter(200_000, 850_000) {}
+
     function dustEmUp(address _dustee) external {
         _dust(_dustee);
     }

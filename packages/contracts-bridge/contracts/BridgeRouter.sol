@@ -10,6 +10,7 @@ import {XAppConnectionClient} from "@nomad-xyz/contracts-router/contracts/XAppCo
 import {Router} from "@nomad-xyz/contracts-router/contracts/Router.sol";
 import {Home} from "@nomad-xyz/contracts-core/contracts/Home.sol";
 import {Version0} from "@nomad-xyz/contracts-core/contracts/Version0.sol";
+import {IPreflight} from "@nomad-xyz/contracts-core/interfaces/IMessageRecipient.sol";
 import {TypedMemView} from "@summa-tx/memview-sol/contracts/TypedMemView.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
@@ -17,7 +18,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 /**
  * @title BridgeRouter
  */
-contract BridgeRouter is Version0, Router {
+contract BridgeRouter is Version0, Router, IPreflight {
     // ============ Libraries ============
 
     using TypedMemView for bytes;
@@ -31,6 +32,13 @@ contract BridgeRouter is Version0, Router {
     uint256 public constant PRE_FILL_FEE_NUMERATOR = 9995;
     uint256 public constant PRE_FILL_FEE_DENOMINATOR = 10000;
     uint256 public constant DUST_AMOUNT = 0.06 ether;
+
+    // ============ Immutables ============
+
+    // Gas recommended for a token deploy + mint
+    uint256 public immutable DEPLOY_GAS;
+    // Gas recommended for a mint without deploying
+    uint256 public immutable MINT_GAS;
 
     // ============ Public Storage ============
 
@@ -84,6 +92,12 @@ contract BridgeRouter is Version0, Router {
 
     // ======== Receive =======
     receive() external payable {}
+
+    // ======== Constructor =======
+    constructor(uint256 _mintGas, uint256 _deployGas) {
+        MINT_GAS = _mintGas;
+        DEPLOY_GAS = _deployGas;
+    }
 
     // ======== Initializer ========
 
@@ -435,5 +449,25 @@ contract BridgeRouter is Version0, Router {
         returns (uint64)
     {
         return (uint64(_origin) << 32) | _nonce;
+    }
+
+    // gas preflighting
+    function preflight(
+        uint32,
+        uint32,
+        bytes32,
+        bytes memory _message
+    ) external view override returns (uint256) {
+        // parse tokenId and action from message
+        bytes29 _msg = _message.ref(0).mustBeMessage();
+        bytes29 _tokenId = _msg.tokenId();
+        address _local = tokenRegistry.getLocalAddress(
+            _tokenId.domain(),
+            _tokenId.id()
+        );
+        if (_local == address(0)) {
+            return DEPLOY_GAS;
+        }
+        return MINT_GAS;
     }
 }
